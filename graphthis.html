@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<!--
+"graphthis.html" ... for plotting algebraic functions in a web browser
+Created March 2018 by Dan Hickok
+
+This is a web application in a single file, containing style, layout, and
+code to generate graphs of functions entered by the user.  This application
+can be run in any browser supporting HTML5 and ECMAScript 2016.
+
+This application is meant for educational use.
+-->
+<html>
+   <head>
+      <title>Graph This!</title>
+      <meta charset="utf-8" />
+
+      <!-- ----------------------------------------------------------------- -->
+      <!-- style section --------------------------------------------------- -->
+      <!-- ----------------------------------------------------------------- -->
+
+      <style>
+         body {
+            font-family: Arial;
+            font-size: 10pt;
+            background: linear-gradient(wheat, chocolate);
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            margin: 20px;
+         }
+
+         h1 {
+            font-size: 14pt;
+            text-align: center;
+         }
+
+         .ctrl-container {
+            margin-top: 8px;
+         }
+
+         .center {
+            text-align: center;
+         }
+
+         .formula {
+            width: 100%;
+         }
+
+         .dimensions {
+            width: 42%;
+         }
+
+         .zoom-button, .movement-button {
+            font-size: 14pt;
+            width: 40px;
+            height: 40px;
+            margin: 2px 2px 6px 2px;
+         }
+
+         #zoom_reset {
+            font-size: 16pt;
+         }
+
+         #container {
+            display: flex;
+            position: absolute;
+            top: 20px;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+         }
+
+         #the_params {
+            width: 250px;
+            padding: 0 10px 0 0;
+         }
+
+         #the_area {
+            width: 100%;
+            height: 100%;
+         }
+
+         #the_graph {
+            border: 1px solid black;
+            background-color: white;
+            height: 100%;
+            width: 100%;
+         }
+      </style>
+   </head>
+   <body onload="resize();" onresize="resize();">
+
+      <!-- ----------------------------------------------------------------- -->
+      <!-- layout section -------------------------------------------------- -->
+      <!-- ----------------------------------------------------------------- -->
+
+      <div id="container">
+         <div id="the_params">
+            <h1>Graph This!</h1>
+            <div class="ctrl-container" id="formula-container">
+               Formulas<br />
+            </div>
+            <div class="ctrl-container">
+               X range<br />
+               <input id="xmin" class="dimensions" type="number" step="any"
+                  onchange="updateRange('xmin');" /> &ndash;
+               <input id="xmax" class="dimensions" type="number" step="any"
+                  onchange="updateRange('xmax');" />
+            </div>
+            <div class="ctrl-container">
+               Y range<br />
+               <input id="ymin" class="dimensions" type="number" step="any"
+                  onchange="updateRange('ymin');" /> &ndash;
+               <input id="ymax" class="dimensions" type="number" step="any"
+                  onchange="updateRange('ymax');" />
+            </div>
+            <div class="ctrl-container">
+               Zoom<br />
+               <div class="center">
+                  <input id="zoomin" class="zoom-button" type="button"
+                     value="&plus;" onclick="zoomIn();" />
+                  <input id="zoom_reset" class="zoom-button" type="button"
+                     value="&#x2218;" onclick="zoom_reset();" />
+                  <input id="zoomout" class="zoom-button" type="button"
+                     value="&minus;" onclick="zoomOut();" />
+               </div>
+            </div>
+            <div class="ctrl-container">
+               Move<br />
+               <div class="center">
+                  <input id="shiftup" class="movement-button" type="button"
+                     value="&uarr;" onclick="moveUp();" /><br />
+                  <input id="shiftleft" class="movement-button" type="button"
+                     value="&larr;" onclick="moveLeft();" />
+                  <input id="shiftorigin" class="movement-button" type="button"
+                     value="&#x2609;" onclick="moveOrigin();" />
+                  <input id="shiftright" class="movement-button" type="button"
+                     value="&rarr;" onclick="moveRight();" /><br />
+                  <input id="shiftdown" class="movement-button" type="button"
+                     value="&darr;" onclick="moveDown();" />
+               </div>
+            </div>
+         </div>
+         <div id="the_area">
+            <canvas id="the_graph">
+               Canvas element not supported in this browser.
+            </canvas>
+         </div>
+      </div>
+   </body>
+
+   <!-- -------------------------------------------------------------------- -->
+   <!-- application code section ------------------------------------------- -->
+   <!-- -------------------------------------------------------------------- -->
+
+   <script>
+      "use strict";
+
+      // this defines number of pixels per unit at zoom = 1.0
+      const scale = 100;
+
+      // this defines colors used in drawing the graph and formulas
+      // the number of formula colors also controls how many formulas there are
+      // - add more colors for more formulas
+      const colorOf = {
+         coordinateLines: "#999",
+         coordinateLabels: "#999",
+         gridLines: "#eee",
+         formula: ["red", "blue", "green", "maroon"],
+      };
+
+      // this flag is used to prevent an event cascade
+      var loading = false;
+
+      // an object created from this function manages range and scaling
+      function GraphDomain() {
+         // properties of our graph domain
+         this.xMin = -10.0;
+         this.xMax =  10.0;
+         this.yMin = -10.0;
+         this.yMax =  10.0;
+         this.zoom =   1.0;
+         this.width = 0;
+         this.height = 0;
+         this.delta = 0.0;
+
+         // functions to give total visible range
+         this.rangeX = () => this.xMax - this.xMin;
+         this.rangeY = () => this.yMax - this.yMin;
+
+         // recalculate the low and high values of our range given canvas dimensions
+         this.recalcRanges = (...args) => {
+            if (args.length > 0) {
+               this.width = args[0];
+               this.height = args[1];
+            }
+
+            let xRatio = -this.xMin / this.rangeX();
+            let yRatio = -this.yMin / this.rangeY();
+
+            let newRangeX = this.width / (scale * this.zoom);
+            let newRangeY = this.height / (scale * this.zoom);
+
+            this.xMin = -xRatio * newRangeX;
+            this.xMax = this.xMin + newRangeX;
+
+            this.yMin = -yRatio * newRangeY;
+            this.yMax = this.yMin + newRangeY;
+         };
+
+         // functions to convert gd coordinates to canvas coordinates
+         this.plotX = (x) => (x - this.xMin) / this.rangeX() * this.width + 0.5;
+         this.plotY = (y) => (1.0 - (y - this.yMin) / this.rangeY()) * this.height + 0.5;
+
+         // special rounding versions for use in drawing grid so it's always sharp
+         this.plotXR = (x) => Math.round(this.plotX(x)) + 0.5;
+         this.plotYR = (y) => Math.round(this.plotY(y)) + 0.5;
+      }
+
+      // this function updates the dimension fields from the gd object
+      function updateDimensions() {
+         let xMin = document.getElementById("xmin");
+         let xMax = document.getElementById("xmax");
+         let yMin = document.getElementById("ymin");
+         let yMax = document.getElementById("ymax");
+
+         loading = true;
+         xMin.value = gd.xMin.toFixed(3);
+         xMax.value = gd.xMax.toFixed(3);
+         yMin.value = gd.yMin.toFixed(3);
+         yMax.value = gd.yMax.toFixed(3);
+         loading = false;
+      }
+
+      // this function draws the entire graph, including grid and functions
+      function draw() {
+         let canvas = document.getElementById("the_graph")
+         let ctx = canvas.getContext("2d");
+
+         // draw the grid and coordinates
+         drawGrid(ctx, gd);
+         drawCoordinates(ctx, gd);
+         labelCoordinates(ctx, gd);
+
+         // draw formulas
+         for (let i = 0; i < colorOf.formula.length; ++i) {
+            drawFormula(ctx, gd, formulaFromElement(`formula${i}`), colorOf.formula[i]);
+         }
+      }
+
+      // this function draws the grid lines for coordinate system
+      function drawGrid(ctx, gd) {
+         ctx.clearRect(0, 0, gd.width, gd.height);
+         ctx.beginPath();
+         ctx.strokeStyle = colorOf.gridLines;
+         ctx.lineWidth = 1;
+         gd.delta = 1.0;
+
+         // don't let the grid lines get closer together than 4px
+         let incr = 1;
+         while (gd.plotX(incr) - gd.plotX(0) < 4)
+         if (firstDigitOf(incr) == 5)
+               incr *= 2;
+            else
+               incr *= 5;
+
+         for (let u = incr; u < gd.xMax; u += incr) {
+            ctx.moveTo(gd.plotXR(u), gd.plotYR(gd.yMin) - 0.1);
+            ctx.lineTo(gd.plotXR(u), gd.plotYR(gd.yMax) + 0.1);
+         }
+         for (let u = -incr; u > gd.xMin; u -= incr) {
+            ctx.moveTo(gd.plotXR(u), gd.plotYR(gd.yMin) - 0.1);
+            ctx.lineTo(gd.plotXR(u), gd.plotYR(gd.yMax) + 0.1);
+         }
+         for (let v = incr; v < gd.yMax; v += incr) {
+            ctx.moveTo(gd.plotXR(gd.xMin) - 0.1, gd.plotYR(v));
+            ctx.lineTo(gd.plotXR(gd.xMax) + 0.1, gd.plotYR(v));
+         }
+         for (let v = -incr; v > gd.yMin; v -= incr) {
+            ctx.moveTo(gd.plotXR(gd.xMin) - 0.1, gd.plotYR(v));
+            ctx.lineTo(gd.plotXR(gd.xMax) + 0.1, gd.plotYR(v));
+         }
+         ctx.stroke();
+      }
+
+      // this function draws the darker coordinate lines
+      function drawCoordinates(ctx, gd) {
+         ctx.beginPath();
+         ctx.strokeStyle = colorOf.coordinateLines;
+         ctx.lineWidth = 1;
+         ctx.moveTo(gd.plotXR(gd.xMin) - 0.1, gd.plotYR(0));
+         ctx.lineTo(gd.plotXR(gd.xMax) + 0.1, gd.plotYR(0));
+         ctx.moveTo(gd.plotXR(0), gd.plotYR(gd.yMin) - 0.1);
+         ctx.lineTo(gd.plotXR(0), gd.plotYR(gd.yMax) + 0.1);
+         ctx.stroke();
+      }
+
+      // this function labels the coordinate lines
+      function labelCoordinates(ctx, gd) {
+         ctx.beginPath();
+         ctx.fillStyle = colorOf.coordinateLabels;
+         ctx.strokeStyle = colorOf.coordinateLabels;
+         ctx.font = "8pt Arial";
+
+         // determine maximum number of digits needed for any of the X-axis labels
+         let maxDigits = Math.max(
+            Math.ceil(Math.log10(Math.abs(gd.xMax))),
+            Math.ceil(Math.log10(Math.abs(gd.xMin))),
+            1
+         );
+
+         // determine space needed for largest label (including minus sign)
+         let labelSpace = ctx.measureText("-" + "0".repeat(maxDigits)).width;
+
+         // determine numbering increment so that numbers aren't too close
+         // (alternate between powers of 5 and 10, e.g., 1, 5, 10, 50, 100, etc.)
+         let incr = 1;
+         while (gd.plotX(incr) - gd.plotX(0) < labelSpace) {
+            if (firstDigitOf(incr) == 5)
+               incr *= 2;
+            else
+               incr *= 5;
+         }
+
+         for (let x = incr; x < gd.xMax; x += incr) {
+            let offset = ctx.measureText(x).width / 2;
+            ctx.fillText(x, gd.plotX(x) - offset, gd.plotY(0) + 14);
+         }
+
+         for (let x = -incr; x > gd.xMin; x -= incr) {
+            let offset = ctx.measureText(x).width / 2;
+            ctx.fillText(x, gd.plotX(x) - offset, gd.plotY(0) + 14);
+         }
+
+         for (let y = incr; y < gd.yMax; y += incr) {
+            let offset = 4;
+            ctx.fillText(y, gd.plotX(0) + 4, gd.plotY(y) + offset);
+         }
+
+         for (let y = -incr; y > gd.yMin; y -= incr) {
+            let offset = 4;
+            ctx.fillText(y, gd.plotX(0) + 4, gd.plotY(y) + offset);
+         }
+      }
+
+      // this function is used in drawing and labeling grids
+      function firstDigitOf(val) {
+         return val / Math.pow(10, Math.floor(Math.log10(val)));
+      }
+
+      // this function translates function field text to ES6 syntax
+      function formulaFromElement(id) {
+         let el = document.getElementById(id);
+         let formula = el.value.trim();
+
+         // add "Math." to  math library constants
+         formula = formula.replace(/\bE\b/gi, "Math.E");
+         formula = formula.replace(/\bLN2\b/gi, "Math.LN2");
+         formula = formula.replace(/\bLN10\b/gi, "Math.LN10");
+         formula = formula.replace(/\bLOG2E\b/gi, "Math.LOG2E");
+         formula = formula.replace(/\bLOG10E\b/gi, "Math.LOG10E");
+         formula = formula.replace(/\bPI\b/gi, "Math.PI");
+         formula = formula.replace(/\bSQRT1_2\b/gi, "Math.SQRT1_2");
+         formula = formula.replace(/\bSQRT2\b/gi, "Math.SQRT2");
+
+         // add "Math." to math library function names
+         formula = formula.replace(/\babs\b/gi, "Math.abs");
+         formula = formula.replace(/\bacos\b/gi, "Math.acos");
+         formula = formula.replace(/\bacosh\b/gi, "Math.acosh");
+         formula = formula.replace(/\basin\b/gi, "Math.asin");
+         formula = formula.replace(/\basinh\b/gi, "Math.asinh");
+         formula = formula.replace(/\batan\b/gi, "Math.atan");
+         formula = formula.replace(/\batanh\b/gi, "Math.atanh");
+         formula = formula.replace(/\batan2\b/gi, "Math.atan2");
+         formula = formula.replace(/\bcbrt\b/gi, "Math.cbrt");
+         formula = formula.replace(/\bceil\b/gi, "Math.ceil");
+         formula = formula.replace(/\bcos\b/gi, "Math.cos");
+         formula = formula.replace(/\bcosh\b/gi, "Math.cosh");
+         formula = formula.replace(/\bexp\b/gi, "Math.exp");
+         formula = formula.replace(/\bexpm1\b/gi, "Math.expm1");
+         formula = formula.replace(/\bfloor\b/gi, "Math.floor");
+         formula = formula.replace(/\bhypot\b/gi, "Math.hypot");
+         formula = formula.replace(/\blog\b/gi, "Math.log");
+         formula = formula.replace(/\blog1p\b/gi, "Math.log1p");
+         formula = formula.replace(/\blog10\b/gi, "Math.log10");
+         formula = formula.replace(/\blog2\b/gi, "Math.log2");
+         formula = formula.replace(/\bmax\b/gi, "Math.max");
+         formula = formula.replace(/\bmin\b/gi, "Math.min");
+         formula = formula.replace(/\bpow\b/gi, "Math.pow");
+         formula = formula.replace(/\brandom\b/gi, "Math.random");
+         formula = formula.replace(/\bround\b/gi, "Math.round");
+         formula = formula.replace(/\bsign\b/gi, "Math.sign");
+         formula = formula.replace(/\bsin\b/gi, "Math.sin");
+         formula = formula.replace(/\bsinh\b/gi, "Math.sinh");
+         formula = formula.replace(/\bsqrt\b/gi, "Math.sqrt");
+         formula = formula.replace(/\btan\b/gi, "Math.tan");
+         formula = formula.replace(/\btanh\b/gi, "Math.tanh");
+         formula = formula.replace(/\btrunc\b/gi, "Math.trunc");
+
+         // in case they already specified "Math." in formula
+         formula = formula.replace(/Math\.Math\./g, "Math.");
+
+         // convert "^" to "**" for exponentiation
+         formula = formula.replace(/\^/g, "**");
+
+         return formula;
+      }
+
+      // this function draws the given formula
+      function drawFormula(ctx, gd, formula, color) {
+         if (formula == "")
+            return;
+
+         let incr = 0.002 / gd.zoom;
+
+         let first = false;
+         let v = 0.0;
+         let fn = {};
+
+         ctx.beginPath();
+         ctx.strokeStyle = color;
+         ctx.lineWidth = 2.0;
+         try {
+            eval("fn = (x) => " + formula);
+
+            first = true;
+            for (let u = gd.xMin - 0.1; u < gd.xMax + 0.1; u += incr) {
+               v = fn(u);
+
+               // some versions of canvas have a hard time plotting to extreme values
+               if (v > gd.yMax + gd.rangeY())
+                  v = gd.yMax + gd.rangeY();
+               if (v < gd.yMin - gd.rangeY())
+                  v = gd.yMin - gd.rangeY();
+
+               if (first)
+                  ctx.moveTo(gd.plotX(u), gd.plotY(v));
+               else
+                  ctx.lineTo(gd.plotX(u), gd.plotY(v));
+               first = false;
+            }
+         }
+         catch (ex) {
+            // we throw away errors here since we're asking the user to enter a correct
+            // formula and it's possible that it's incorrect
+         }
+
+         ctx.stroke();
+      }
+
+      // event code ////////////////////////////////////////////////////////////
+
+      // window resize event
+      function resize() {
+         let canvas = document.getElementById("the_graph");
+         canvas.width = canvas.clientWidth;
+         canvas.height = canvas.clientHeight;
+         gd.recalcRanges(canvas.width, canvas.height);
+         updateDimensions();
+         draw();
+      }
+
+      // zoom in button click event
+      function zoomIn() {
+         gd.zoom *= 1.5;
+         gd.recalcRanges();
+         updateDimensions();
+         draw();
+      }
+
+      // zoom reset button click event
+      function zoom_reset() {
+         gd.zoom = 1.0;
+         gd.recalcRanges();
+         updateDimensions();
+         draw();
+      }
+
+      // zoom out button click event
+      function zoomOut() {
+         gd.zoom /= 1.5;
+         gd.recalcRanges();
+         updateDimensions();
+         draw();
+      }
+
+      // move left button click event
+      function moveLeft() {
+         let range = gd.rangeX();
+         gd.delta = range / 7.5;
+         gd.xMin -= gd.delta;
+         gd.xMax -= gd.delta;
+         updateDimensions();
+         draw();
+      }
+
+      // move right button click event
+      function moveRight() {
+         let range = gd.rangeX();
+         gd.delta = range / 7.5;
+         gd.xMin += gd.delta;
+         gd.xMax += gd.delta;
+         updateDimensions();
+         draw();
+      }
+
+      // move up button click event
+      function moveUp() {
+         let range = gd.rangeY();
+         gd.delta = range / 7.5;
+         gd.yMin += gd.delta;
+         gd.yMax += gd.delta;
+         updateDimensions();
+         draw();
+      }
+
+      // move down button click event
+      function moveDown() {
+         let range = gd.rangeY();
+         gd.delta = range / 7.5;
+         gd.yMin -= gd.delta;
+         gd.yMax -= gd.delta;
+         updateDimensions();
+         draw();
+      }
+
+      // center origin button click event
+      function moveOrigin() {
+         let x = gd.rangeX() / 2.0;
+         let y = gd.rangeY() / 2.0;
+         gd.xMin = -x;
+         gd.xMax = x;
+         gd.yMin = -y;
+         gd.yMax = y;
+         updateDimensions();
+         draw();
+      }
+
+      // range field change event
+      function updateRange(src) {
+         if (loading)
+            return;
+
+         let xMin = document.getElementById("xmin");
+         let xMax = document.getElementById("xmax");
+         let yMin = document.getElementById("ymin");
+         let yMax = document.getElementById("ymax");
+
+         let rangeX = gd.rangeX();
+         let rangeY = gd.rangeY();
+
+         switch (src) {
+            case "xmin":
+               gd.xMin = parseFloat(xMin.value);
+               gd.xMax = gd.xMin + rangeX;
+               break;
+            case "xmax":
+               gd.xMax = parseFloat(xMax.value);
+               gd.xMin = gd.xMax - rangeX;
+               break;
+            case "ymin":
+               gd.yMin = parseFloat(yMin.value);
+               gd.yMax = gd.yMin + rangeY;
+               break;
+            case "ymax":
+               gd.yMax = parseFloat(yMax.value);
+               gd.yMin = gd.yMax - rangeY;
+               break;
+         }
+
+         updateDimensions();
+         draw();
+      }
+
+      // begin processing //////////////////////////////////////////////////////
+
+      // create formula fields, one for each defined color
+      let formulaContainer = document.getElementById("formula-container");
+      for (let i = 0; i < colorOf.formula.length; ++i) {
+
+         let label = document.createElement("span");
+         label.appendChild(document.createTextNode("f(x)="));
+         label.setAttribute("style", `color: ${colorOf.formula[i]}`);
+
+         let field = document.createElement("input");
+         field.setAttribute("id", `formula${i}`);
+         field.setAttribute("type", "text");
+         field.setAttribute("class", "formula");
+
+         let br = document.createElement("br");
+
+         formulaContainer.appendChild(label);
+         formulaContainer.appendChild(field);
+         formulaContainer.appendChild(br);
+      }
+
+      // make a GraphDomain object to manage scaling and moving
+      let gd = new GraphDomain();
+
+   </script>
+</html>
