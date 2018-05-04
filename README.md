@@ -1,7 +1,7 @@
 # graph-this
 ### _A stand-alone, single-file web application for graphing algebraic functions_
 
-Some time ago I wanted to find a nice combination of sine waves that, when applied to the red, green, and blue components of a series of elements, would provide a nice gradient of colors.  So I thought, "Is there a simple application out there that could draw the sine functions I wanted to use?"
+Some time ago I wanted to find a nice combination of sine waves that, when applied to the red, green, and blue components of a series of elements, would provide a nice gradient of colors.  I wanted some way to see the sine waves as lines on a graph, in order to guess the best formulas to use to avoid washed-out colors.  So I thought, "Is there a simple application out there that could draw the sine functions I wanted to use?"
 
 Well, there are *lots* of applications out there, but nothing really simple -- and most required multiple files (as all good applications do).  Some depended heavily on external libraries to do the drawing.  What I really wanted was just a simple, one-page application.
 
