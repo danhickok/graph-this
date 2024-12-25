@@ -28,3 +28,6 @@ I also want to add an option to make a legend at the bottom showing the formulas
 Not all browsers let you right-click and save the drawn image, so I am thinking of adding a button to let you do that.
 
 I want to add a "save" and "restore" button to let you set up formulas ahead of time.
+
+
+
