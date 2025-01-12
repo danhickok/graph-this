@@ -19,6 +19,7 @@ Here are some interesting formulas to try:
 
 It's easy to use, and easy to modify.  I've included lots of comments to guide you.  To add more formulas, all you need to do is add additional colors to the `colorOf.formula` array.
 
+
 #### Planned Features
 
 Right now, only Cartesian functions are supported.  I plan to add two more "modes":  one for polar functions, and one for parametric functions (that is, where X and Y are functions of time).
