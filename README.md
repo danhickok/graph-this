@@ -31,4 +31,3 @@ Not all browsers let you right-click and save the drawn image, so I am thinking 
 I want to add a "save" and "restore" button to let you set up formulas ahead of time.
 
 
-
